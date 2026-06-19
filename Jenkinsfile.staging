@@ -59,18 +59,20 @@ pipeline {
                         echo "Waiting for backend..."
 
                         for i in \$(seq 1 30); do
-                            curl -s http://localhost:8001/health && echo "READY" && exit 0
+                            # Target the container name and its internal port 8000
+                            curl -s http://car_backend_staging:8000/health && echo "READY" && exit 0
                             echo "Not ready yet..."
                             sleep 2
                         done
 
                         echo "Backend failed to start"
-                        docker compose -f docker-compose.staging.yml logs backend-staging
+                        docker compose -f docker-compose.staging.yml --env-file .env.staging logs backend-staging
                         exit 1
                     """
                 }
             }
         }
+
 
         stage('Integration tests') {
             steps {
