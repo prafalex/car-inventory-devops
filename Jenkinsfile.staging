@@ -50,21 +50,15 @@ pipeline {
                 withCredentials([file(credentialsId: 'env-staging-file', variable: 'ENV_FILE')]) {
                     sh """
                         export BUILD_TAG=${BUILD_TAG}
-
                         cp \$ENV_FILE .env.staging
-
                         docker compose -f docker-compose.staging.yml --env-file .env.staging down || true
                         docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
-
                         echo "Waiting for backend..."
-
                         for i in \$(seq 1 30); do
-                            # Target the container name and its internal port 8000
-                            curl -s http://172.17.0.1:8000/health && echo "READY" && exit 0
+                            docker compose -f docker-compose.staging.yml --env-file .env.staging exec -T backend-staging curl -sf http://localhost:8000/health && echo "READY" && exit 0
                             echo "Not ready yet..."
                             sleep 2
                         done
-
                         echo "Backend failed to start"
                         docker compose -f docker-compose.staging.yml --env-file .env.staging logs backend-staging
                         exit 1
@@ -81,7 +75,7 @@ pipeline {
                         python3 -m venv venv-integration
                         . venv-integration/bin/activate
                         pip install -r requirements-integration.txt
-                        STAGING_URL=http://localhost:8001 pytest tests_integration/ -v
+                        STAGING_URL=http://car_backend_staging:8000 pytest tests_integration/ -v
                     """
                 }
             }
