@@ -16,6 +16,7 @@ app.add_middleware(
 
 app.include_router(cars.router, prefix="/api/cars", tags=["cars"])
 
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "car-inventory-backend"}
