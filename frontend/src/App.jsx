@@ -11,25 +11,33 @@ function App() {
   const [search, setSearch]   = useState("")
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  const fetchCars = async () => {
-    setLoading(true)
-    try {
-      const params = search ? { brand: search } : {}
-      const res = await axios.get(`${API}/cars/`, { params })
-      setCars(res.data)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
+
+ useEffect(() => {
+    let ignore = false
+
+    async function fetchCars() {
+      setLoading(true)
+      try {
+        const params = search ? { brand: search } : {}
+        const res = await axios.get(`${API}/cars/`, { params })
+        if (!ignore) setCars(res.data)
+      } catch (e) {
+        console.error(e)
+      } finally {
+        if (!ignore) setLoading(false)
+      }
     }
-  }
 
-  useEffect(() => { fetchCars() }, [search])
+    fetchCars()
+
+    return () => { ignore = true }
+  }, [search, refreshKey])
 
   const handleDelete = async (id) => {
     await axios.delete(`${API}/cars/${id}`)
-    fetchCars()
+    setRefreshKey(k => k + 1)
   }
 
   return (
@@ -53,7 +61,7 @@ function App() {
         </div>
 
         {showForm && (
-          <CarForm api={API} onSaved={() => { setShowForm(false); fetchCars() }} />
+          <CarForm api={API} onSaved={() => { setShowForm(false); setRefreshKey(k => k + 1) }} />
         )}
 
         {loading ? (
