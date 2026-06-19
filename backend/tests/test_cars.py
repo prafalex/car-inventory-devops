@@ -42,3 +42,12 @@ def test_create_car_missing_field_fails():
     payload = {"brand": "Incomplete"}
     response = client.post("/api/cars/", json=payload)
     assert response.status_code == 422
+
+def test_create_car_zero_mileage_is_valid():
+    payload = {
+        "brand": "TestBrand", "model": "TestModel", "year": 2024,
+        "price": 25000, "fuel": "electric", "mileage": 0, "color": "White"
+    }
+    response = client.post("/api/cars/", json=payload)
+    assert response.status_code == 201
+    assert response.json()["mileage"] == 0
