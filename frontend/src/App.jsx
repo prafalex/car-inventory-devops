@@ -4,7 +4,7 @@ import CarTable from "./components/CarTable"
 import CarForm from "./components/CarForm"
 import "./App.css"
 
-const API = import.meta.env.VITE_API_URL || "/api"
+const API =  "/api"
 
 function App() {
   const [cars, setCars]       = useState([])
