@@ -22,10 +22,7 @@ pipeline {
             steps {
                 sh """
                     docker build -t ${REGISTRY}/backend:${BUILD_TAG} -t ${REGISTRY}/backend:latest ./backend
-                    docker build \
-                        --build-arg VITE_API_URL="http://172.17.0.1:8001/api" \
-                        -t ${REGISTRY}/frontend:${BUILD_TAG} \
-                        -t ${REGISTRY}/frontend:latest ./frontend                
+                    docker build -t ${REGISTRY}/frontend:${BUILD_TAG} -t ${REGISTRY}/frontend:latest ./frontend
                 """
             }
         }
@@ -84,7 +81,7 @@ pipeline {
                         python3 -m venv venv-integration
                         . venv-integration/bin/activate
                         pip install -r requirements-integration.txt
-                        STAGING_URL=http://172.17.0.1:8001 pytest tests_integration/ -v
+                        STAGING_URL=http://localhost:8001 pytest tests_integration/ -v
                     """
                 }
             }
