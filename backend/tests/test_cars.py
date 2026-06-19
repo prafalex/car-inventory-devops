@@ -50,4 +50,4 @@ def test_create_car_zero_mileage_is_valid():
     }
     response = client.post("/api/cars/", json=payload)
     assert response.status_code == 201
-    assert response.json()["mileage"] = 0
+    assert response.json()["mileage"] == 0
