@@ -1,0 +1,84 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+    }
+
+    environment {
+        REGISTRY = "ghcr.io/prafalex/car-inventory-devops"
+        BUILD_TAG = "${env.BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build images') {
+            steps {
+                sh """
+                    docker build -t ${REGISTRY}/backend:${BUILD_TAG} -t ${REGISTRY}/backend:latest ./backend
+                    docker build -t ${REGISTRY}/frontend:${BUILD_TAG} -t ${REGISTRY}/frontend:latest ./frontend
+                """
+            }
+        }
+
+        stage('Push to GitHub Packages') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'ghcr-credentials',
+                    usernameVariable: 'GHCR_USER',
+                    passwordVariable: 'GHCR_TOKEN'
+                )]) {
+                    sh """
+                        echo \$GHCR_TOKEN | docker login ghcr.io -u \$GHCR_USER --password-stdin
+                        docker push ${REGISTRY}/backend:${BUILD_TAG}
+                        docker push ${REGISTRY}/backend:latest
+                        docker push ${REGISTRY}/frontend:${BUILD_TAG}
+                        docker push ${REGISTRY}/frontend:latest
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to staging') {
+            steps {
+                sh """
+                    export BUILD_TAG=${BUILD_TAG}
+                    docker compose -f docker-compose.staging.yml --env-file .env.staging down
+                    docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
+                    sleep 10
+                """
+            }
+        }
+
+        stage('Integration tests') {
+            steps {
+                dir('backend') {
+                    sh """
+                        python3 -m venv venv-integration
+                        . venv-integration/bin/activate
+                        pip install -r requirements-integration.txt
+                        STAGING_URL=http://localhost:8001 pytest tests_integration/ -v
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Staging deployment succeeded: images built, pushed, deployed, and verified.'
+        }
+        failure {
+            echo 'Staging pipeline failed: check the stage logs above.'
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
