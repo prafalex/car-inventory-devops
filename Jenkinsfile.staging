@@ -50,7 +50,10 @@ pipeline {
                 withCredentials([file(credentialsId: 'env-staging-file', variable: 'ENV_FILE')]) {
                     sh """
                         export BUILD_TAG=${BUILD_TAG}
-                        docker compose -f docker-compose.staging.yml --env-file .env.staging down
+
+                        cp \$ENV_FILE .env.staging
+
+                        docker compose -f docker-compose.staging.yml --env-file .env.staging down || true
                         docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
 
                         echo "Waiting for backend..."
