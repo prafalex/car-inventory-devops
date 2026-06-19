@@ -12,4 +12,3 @@ class Car(Base):
     fuel     = Column(String, nullable=False)   # petrol, diesel, electric, hybrid
     mileage  = Column(Integer, nullable=False)
     color    = Column(String, nullable=True)
-# Future field: engine_type could be added here
