@@ -60,7 +60,7 @@ pipeline {
 
                         for i in \$(seq 1 30); do
                             # Target the container name and its internal port 8000
-                            curl -s http://car_backend_staging:8000/health && echo "READY" && exit 0
+                            curl -s http://172.17.0.1:8000/health && echo "READY" && exit 0
                             echo "Not ready yet..."
                             sleep 2
                         done
