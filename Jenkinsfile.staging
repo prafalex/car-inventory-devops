@@ -70,14 +70,12 @@ pipeline {
 
         stage('Integration tests') {
             steps {
-                dir('backend') {
-                    sh """
-                        python3 -m venv venv-integration
-                        . venv-integration/bin/activate
+                sh """
+                    docker compose -f docker-compose.staging.yml --env-file .env.staging exec -T backend-staging \
                         pip install -r requirements-integration.txt
-                        STAGING_URL=http://car_backend_staging:8000 pytest tests_integration/ -v
-                    """
-                }
+                    docker compose -f docker-compose.staging.yml --env-file .env.staging exec -T -e STAGING_URL=http://localhost:8000 backend-staging \
+                        pytest tests_integration/ -v
+                """
             }
         }
     }
