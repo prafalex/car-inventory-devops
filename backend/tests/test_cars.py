@@ -42,3 +42,11 @@ def test_create_car_missing_field_fails():
     payload = {"brand": "Incomplete"}
     response = client.post("/api/cars/", json=payload)
     assert response.status_code == 422
+
+def test_create_car_negative_price_fails():
+    payload = {
+        "brand": "TestBrand", "model": "TestModel", "year": 2024,
+        "price": -500, "fuel": "petrol", "mileage": 1000, "color": "Black"
+    }
+    response = client.post("/api/cars/", json=payload)
+    assert response.status_code == 422   

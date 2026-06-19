@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from app.database import get_db
 from app.models.car import Car
@@ -16,6 +16,20 @@ class CarCreate(BaseModel):
     fuel: str
     mileage: int
     color: Optional[str] = None
+
+    @field_validator("price")
+    @classmethod
+    def price_must_be_positive(cls, v):
+        if v <= 0:
+            raise ValueError("price must be greater than 0")
+        return v
+
+    @field_validator("mileage")
+    @classmethod
+    def mileage_must_be_non_negative(cls, v):
+        if v < 0:
+            raise ValueError("mileage cannot be negative")
+        return v
 
 
 class CarResponse(CarCreate):
