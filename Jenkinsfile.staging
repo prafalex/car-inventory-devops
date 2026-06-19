@@ -50,13 +50,20 @@ pipeline {
                 withCredentials([file(credentialsId: 'env-staging-file', variable: 'ENV_FILE')]) {
                     sh """
                         export BUILD_TAG=${BUILD_TAG}
-
-                        cp \$ENV_FILE .env.staging
-
-                        docker compose -f docker-compose.staging.yml --env-file .env.staging down || true
+                        docker compose -f docker-compose.staging.yml --env-file .env.staging down
                         docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
 
-                        sleep 10
+                        echo "Waiting for backend..."
+
+                        for i in \$(seq 1 30); do
+                            curl -s http://localhost:8001/health && echo "READY" && exit 0
+                            echo "Not ready yet..."
+                            sleep 2
+                        done
+
+                        echo "Backend failed to start"
+                        docker compose -f docker-compose.staging.yml logs backend-staging
+                        exit 1
                     """
                 }
             }
