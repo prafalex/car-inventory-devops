@@ -17,3 +17,4 @@ class Car(Base):
 
 # Future field: engine_type could be added here v02
 # Future field: repairs could be added here
+# Branch protection now enforces CI status checks before merge
