@@ -47,12 +47,18 @@ pipeline {
 
         stage('Deploy to staging') {
             steps {
-                sh """
-                    export BUILD_TAG=${BUILD_TAG}
-                    docker compose -f docker-compose.staging.yml --env-file .env.staging down
-                    docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
-                    sleep 10
-                """
+                withCredentials([file(credentialsId: 'env-staging-file', variable: 'ENV_FILE')]) {
+                    sh """
+                        export BUILD_TAG=${BUILD_TAG}
+
+                        cp \$ENV_FILE .env.staging
+
+                        docker compose -f docker-compose.staging.yml --env-file .env.staging down || true
+                        docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
+
+                        sleep 10
+                    """
+                }
             }
         }
 
