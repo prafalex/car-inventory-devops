@@ -22,7 +22,10 @@ pipeline {
             steps {
                 sh """
                     docker build -t ${REGISTRY}/backend:${BUILD_TAG} -t ${REGISTRY}/backend:latest ./backend
-                    docker build -t ${REGISTRY}/frontend:${BUILD_TAG} -t ${REGISTRY}/frontend:latest ./frontend
+                    docker build \
+                        --build-arg VITE_API_URL="http://172.17.0.1:8001/api" \
+                        -t ${REGISTRY}/frontend:${BUILD_TAG} \
+                        -t ${REGISTRY}/frontend:latest ./frontend                
                 """
             }
         }
