@@ -30,7 +30,7 @@ class CarCreate(BaseModel):
         if v < 0:
             raise ValueError("mileage cannot be negative")
         return v
-    
+
 
 class CarResponse(CarCreate):
     id: int
