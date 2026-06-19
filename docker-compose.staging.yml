@@ -28,12 +28,15 @@ services:
         condition: service_healthy
 
   frontend-staging:
-    image: ghcr.io/prafalex/car-inventory-devops/frontend:${BUILD_TAG}
-    container_name: car_frontend_staging
-    ports:
-      - "3001:80"
-    depends_on:
-      - backend-staging
+      image: ghcr.io/prafalex/car-inventory-devops/frontend:${BUILD_TAG}
+      container_name: car_frontend_staging
+      environment:
+        - BACKEND_HOST=backend-staging
+        - BACKEND_PORT=8000
+      ports:
+        - "3001:80"
+      depends_on:
+        - backend-staging
 
 volumes:
   postgres_staging_data:
