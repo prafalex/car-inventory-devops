@@ -5,14 +5,6 @@ pipeline {
         timestamps()
     }
 
-    triggers {
-        githubPullRequests(
-            spec: '',
-            triggerMode: 'HEAVY_HOOKS_ONLY',
-            events: [Open(), commitChanged()]
-        )
-    }
-
     stages {
 
         stage('Checkout') {
