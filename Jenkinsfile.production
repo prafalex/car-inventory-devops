@@ -9,7 +9,7 @@ pipeline {
         REGISTRY        = "ghcr.io/prafalex/car-inventory-devops"
         BUILD_TAG       = "latest"
         NGINX_CONF      = "infra/nginx/nginx-prod.conf"
-        MONITOR_SECONDS = "600"
+        MONITOR_SECONDS = "120"
         POLL_INTERVAL   = "30"
     }
 
