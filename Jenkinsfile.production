@@ -1,0 +1,154 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+    }
+
+    environment {
+        REGISTRY        = "ghcr.io/prafalex/car-inventory-devops"
+        BUILD_TAG       = "latest"
+        STATE_FILE      = "infra/active_env"
+        NGINX_CONF      = "infra/nginx/nginx-prod.conf"
+        MONITOR_SECONDS = "600"
+        POLL_INTERVAL   = "30"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Identify environments') {
+            steps {
+                script {
+                    env.ACTIVE_ENV = sh(
+                        script: "cat ${STATE_FILE}",
+                        returnStdout: true
+                    ).trim()
+
+                    env.IDLE_ENV = (env.ACTIVE_ENV == 'blue') ? 'green' : 'blue'
+
+                    echo "Currently live: ${env.ACTIVE_ENV}"
+                    echo "Deploying to:   ${env.IDLE_ENV}"
+
+                    env.IDLE_BACKEND_PORT  = (env.IDLE_ENV == 'blue') ? '8002' : '8003'
+                    env.IDLE_FRONTEND_PORT = (env.IDLE_ENV == 'blue') ? '3002' : '3003'
+                    env.LIVE_BACKEND_PORT  = (env.ACTIVE_ENV == 'blue') ? '8002' : '8003'
+                    env.LIVE_FRONTEND_PORT = (env.ACTIVE_ENV == 'blue') ? '3002' : '3003'
+
+                    env.IDLE_BACKEND_CONTAINER  = "car_backend_${env.IDLE_ENV}"
+                    env.IDLE_COMPOSE_FILE = "docker-compose.${env.IDLE_ENV}.yml"
+                    env.IDLE_ENV_CRED_ID  = "env-${env.IDLE_ENV}-file"
+                }
+            }
+        }
+
+        stage('Deploy to idle') {
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'ghcr-credentials',
+                                     usernameVariable: 'GHCR_USER',
+                                     passwordVariable: 'GHCR_TOKEN'),
+                    file(credentialsId: "${env.IDLE_ENV_CRED_ID}",
+                         variable: 'ENV_FILE')
+                ]) {
+                    sh """
+                        echo \$GHCR_TOKEN | docker login ghcr.io -u \$GHCR_USER --password-stdin
+                        export BUILD_TAG=${BUILD_TAG}
+                        cp \$ENV_FILE .env.${env.IDLE_ENV}
+                        docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} down || true
+                        docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} up -d
+                    """
+                }
+            }
+        }
+
+        stage('Smoke tests on idle') {
+            steps {
+                sh """
+                    echo "Waiting for idle environment to be ready..."
+                    for i in \$(seq 1 30); do
+                        docker compose -f ${env.IDLE_COMPOSE_FILE} \
+                            --env-file .env.${env.IDLE_ENV} \
+                            exec -T ${env.IDLE_ENV == 'blue' ? 'backend-blue' : 'backend-green'} \
+                            curl -sf http://localhost:8000/health && echo "READY" && break
+                        echo "Not ready yet... (\$i/30)"
+                        sleep 3
+                    done
+                """
+                dir('backend') {
+                    sh """
+                        python3 -m venv venv-smoke
+                        . venv-smoke/bin/activate
+                        pip install -r requirements-integration.txt
+                        STAGING_URL=http://localhost:${env.IDLE_BACKEND_PORT} pytest tests_integration/ -v
+                    """
+                }
+            }
+        }
+
+        stage('Switch traffic') {
+            steps {
+                script {
+                    sh """
+                        sed -i 's|server localhost:${env.LIVE_BACKEND_PORT}|server localhost:${env.IDLE_BACKEND_PORT}|g' ${NGINX_CONF}
+                        sed -i 's|server localhost:${env.LIVE_FRONTEND_PORT}|server localhost:${env.IDLE_FRONTEND_PORT}|g' ${NGINX_CONF}
+                    """
+
+                    echo "Traffic switched to ${env.IDLE_ENV}"
+                    echo "Nginx reloaded — ${env.IDLE_ENV} is now live"
+                }
+            }
+        }
+
+        stage('Monitor post-swap') {
+            steps {
+                script {
+                    def healthy = true
+                    def polls = (env.MONITOR_SECONDS.toInteger() / env.POLL_INTERVAL.toInteger()).toInteger()
+
+                    for (int i = 1; i <= polls; i++) {
+                        sleep(env.POLL_INTERVAL.toInteger())
+                        def result = sh(
+                            script: "curl -sf http://localhost:${env.IDLE_BACKEND_PORT}/health",
+                            returnStatus: true
+                        )
+                        echo "Health check ${i}/${polls}: ${result == 0 ? 'OK' : 'FAILED'}"
+                        if (result != 0) {
+                            healthy = false
+                            break
+                        }
+                    }
+
+                    if (!healthy) {
+                        echo "Health checks failed — triggering automatic rollback"
+                        sh """
+                            sed -i 's|server localhost:${env.IDLE_BACKEND_PORT}|server localhost:${env.LIVE_BACKEND_PORT}|g' ${NGINX_CONF}
+                            sed -i 's|server localhost:${env.IDLE_FRONTEND_PORT}|server localhost:${env.LIVE_FRONTEND_PORT}|g' ${NGINX_CONF}
+                        """
+                        error("Rollback complete: reverted to ${env.ACTIVE_ENV}")
+                    }
+
+                    sh "echo ${env.IDLE_ENV} > ${STATE_FILE}"
+                    echo "Deployment successful — ${env.IDLE_ENV} is now the live environment"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Blue/Green deployment complete. New live environment: ${env.IDLE_ENV}"
+        }
+        failure {
+            echo "Pipeline failed. Live environment unchanged: ${env.ACTIVE_ENV}"
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
