@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  db-blue:
+    image: postgres:15-alpine
+    container_name: car_db_blue
+    env_file:
+      - .env.blue
+    volumes:
+      - postgres_blue_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend-blue:
+    image: ghcr.io/prafalex/car-inventory-devops/backend:${BUILD_TAG}
+    container_name: car_backend_blue
+    env_file:
+      - .env.blue
+    ports:
+      - "8002:8000"
+    depends_on:
+      db-blue:
+        condition: service_healthy
+
+  frontend-blue:
+    image: ghcr.io/prafalex/car-inventory-devops/frontend:${BUILD_TAG}
+    container_name: car_frontend_blue
+    environment:
+      - BACKEND_HOST=backend-blue
+      - BACKEND_PORT=8000
+    ports:
+      - "3002:80"
+    depends_on:
+      - backend-blue
+
+volumes:
+  postgres_blue_data:

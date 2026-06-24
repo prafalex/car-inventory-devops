@@ -23,3 +23,7 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+
+.env.blue
+.env.green
