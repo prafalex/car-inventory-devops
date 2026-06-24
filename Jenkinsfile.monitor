@@ -6,10 +6,9 @@ pipeline {
     }
 
     environment {
-        STATE_FILE        = "infra/active_env"
-        CONSECUTIVE_FAILS = "3"
-        BACKEND_FAIL_FILE  = "/var/jenkins_home/monitor/backend_fails"
-        FRONTEND_FAIL_FILE = "/var/jenkins_home/monitor/frontend_fails"
+        CONSECUTIVE_FAILS   = "3"
+        BACKEND_FAIL_FILE   = "/var/jenkins_home/monitor/backend_fails"
+        FRONTEND_FAIL_FILE  = "/var/jenkins_home/monitor/frontend_fails"
     }
 
     triggers {
@@ -31,17 +30,30 @@ pipeline {
         stage('Identify live environment') {
             steps {
                 script {
-                    env.ACTIVE_ENV = sh(
-                        script: "cat ${STATE_FILE}",
+                    def blueRunning = sh(
+                        script: "docker ps --filter name=car_backend_blue --filter status=running -q",
                         returnStdout: true
                     ).trim()
+
+                    def greenRunning = sh(
+                        script: "docker ps --filter name=car_backend_green --filter status=running -q",
+                        returnStdout: true
+                    ).trim()
+
+                    if (blueRunning) {
+                        env.ACTIVE_ENV = 'blue'
+                    } else if (greenRunning) {
+                        env.ACTIVE_ENV = 'green'
+                    } else {
+                        error("Neither blue nor green backend is running — cannot determine live environment")
+                    }
 
                     env.LIVE_BACKEND_SERVICE  = "backend-${env.ACTIVE_ENV}"
                     env.LIVE_FRONTEND_SERVICE = "frontend-${env.ACTIVE_ENV}"
                     env.LIVE_COMPOSE_FILE     = "docker-compose.${env.ACTIVE_ENV}.yml"
                     env.LIVE_ENV_CRED_ID      = "env-${env.ACTIVE_ENV}-file"
 
-                    echo "Monitoring live environment: ${env.ACTIVE_ENV}"
+                    echo "Live environment detected: ${env.ACTIVE_ENV}"
                 }
             }
         }
@@ -92,11 +104,11 @@ pipeline {
                     script {
                         sh "cp \$ENV_FILE .env.${env.ACTIVE_ENV}"
 
-                        def threshold = env.CONSECUTIVE_FAILS.toInteger()
-
+                        def threshold     = env.CONSECUTIVE_FAILS.toInteger()
                         def backendFails  = sh(script: "cat ${BACKEND_FAIL_FILE}  || echo 0", returnStdout: true).trim().toInteger()
                         def frontendFails = sh(script: "cat ${FRONTEND_FAIL_FILE} || echo 0", returnStdout: true).trim().toInteger()
 
+                        // --- Backend ---
                         if (env.BACKEND_HEALTHY == 'false') {
                             backendFails++
                             sh "echo ${backendFails} > ${BACKEND_FAIL_FILE}"
@@ -119,6 +131,7 @@ pipeline {
                             echo "Backend healthy. Consecutive fail count reset to 0."
                         }
 
+                        // --- Frontend ---
                         if (env.FRONTEND_HEALTHY == 'false') {
                             frontendFails++
                             sh "echo ${frontendFails} > ${FRONTEND_FAIL_FILE}"
@@ -148,10 +161,10 @@ pipeline {
 
     post {
         success {
-            echo "Monitoring cycle complete — all services healthy."
+            echo "Monitoring cycle complete."
         }
         failure {
-            echo "Monitoring cycle encountered an error."
+            echo "Monitoring cycle encountered an error — check stage logs above."
         }
         always {
             cleanWs()
