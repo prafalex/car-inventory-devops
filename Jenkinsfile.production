@@ -8,7 +8,6 @@ pipeline {
     environment {
         REGISTRY        = "ghcr.io/prafalex/car-inventory-devops"
         BUILD_TAG       = "latest"
-        STATE_FILE      = "infra/active_env"
         NGINX_CONF      = "infra/nginx/nginx-prod.conf"
         MONITOR_SECONDS = "600"
         POLL_INTERVAL   = "30"
@@ -25,14 +24,29 @@ pipeline {
         stage('Identify environments') {
             steps {
                 script {
-                    env.ACTIVE_ENV = sh(
-                        script: "cat ${STATE_FILE}",
+                    def blueRunning = sh(
+                        script: "docker ps --filter name=car_backend_blue --filter status=running -q",
                         returnStdout: true
                     ).trim()
 
-                    env.IDLE_ENV = (env.ACTIVE_ENV == 'blue') ? 'green' : 'blue'
+                    def greenRunning = sh(
+                        script: "docker ps --filter name=car_backend_green --filter status=running -q",
+                        returnStdout: true
+                    ).trim()
 
-                    echo "Currently live: ${env.ACTIVE_ENV}"
+                    if (blueRunning) {
+                        env.ACTIVE_ENV = 'blue'
+                        env.IDLE_ENV   = 'green'
+                    } else if (greenRunning) {
+                        env.ACTIVE_ENV = 'green'
+                        env.IDLE_ENV   = 'blue'
+                    } else {
+                        echo "No environment currently running — first deployment, defaulting to blue as live"
+                        env.ACTIVE_ENV = 'blue'
+                        env.IDLE_ENV   = 'green'
+                    }
+
+                    echo "Currently live: ${env.ACTIVE_ENV} (detected from running containers)"
                     echo "Deploying to:   ${env.IDLE_ENV}"
 
                     env.IDLE_BACKEND_PORT  = (env.IDLE_ENV == 'blue') ? '8002' : '8003'
@@ -41,8 +55,8 @@ pipeline {
                     env.LIVE_FRONTEND_PORT = (env.ACTIVE_ENV == 'blue') ? '3002' : '3003'
 
                     env.IDLE_BACKEND_CONTAINER = "car_backend_${env.IDLE_ENV}"
-                    env.IDLE_COMPOSE_FILE = "docker-compose.${env.IDLE_ENV}.yml"
-                    env.IDLE_ENV_CRED_ID  = "env-${env.IDLE_ENV}-file"
+                    env.IDLE_COMPOSE_FILE      = "docker-compose.${env.IDLE_ENV}.yml"
+                    env.IDLE_ENV_CRED_ID       = "env-${env.IDLE_ENV}-file"
                 }
             }
         }
@@ -140,13 +154,12 @@ pipeline {
                         error("Rollback complete: reverted to ${env.ACTIVE_ENV}")
                     }
 
-                    sh "echo ${env.IDLE_ENV} > ${STATE_FILE}"
                     echo "Deployment successful — ${env.IDLE_ENV} is now the live environment"
                 }
             }
         }
 
-    } 
+    }
 
     post {
         success {
@@ -159,5 +172,4 @@ pipeline {
             cleanWs()
         }
     }
-
-}  
+}
