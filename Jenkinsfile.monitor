@@ -1,0 +1,160 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+    }
+
+    environment {
+        STATE_FILE        = "infra/active_env"
+        CONSECUTIVE_FAILS = "3"
+        BACKEND_FAIL_FILE  = "/var/jenkins_home/monitor/backend_fails"
+        FRONTEND_FAIL_FILE = "/var/jenkins_home/monitor/frontend_fails"
+    }
+
+    triggers {
+        cron('* * * * *')
+    }
+
+    stages {
+
+        stage('Setup') {
+            steps {
+                sh """
+                    mkdir -p /var/jenkins_home/monitor
+                    [ -f ${BACKEND_FAIL_FILE} ]  || echo 0 > ${BACKEND_FAIL_FILE}
+                    [ -f ${FRONTEND_FAIL_FILE} ] || echo 0 > ${FRONTEND_FAIL_FILE}
+                """
+            }
+        }
+
+        stage('Identify live environment') {
+            steps {
+                script {
+                    env.ACTIVE_ENV = sh(
+                        script: "cat ${STATE_FILE}",
+                        returnStdout: true
+                    ).trim()
+
+                    env.LIVE_BACKEND_SERVICE  = "backend-${env.ACTIVE_ENV}"
+                    env.LIVE_FRONTEND_SERVICE = "frontend-${env.ACTIVE_ENV}"
+                    env.LIVE_COMPOSE_FILE     = "docker-compose.${env.ACTIVE_ENV}.yml"
+                    env.LIVE_ENV_CRED_ID      = "env-${env.ACTIVE_ENV}-file"
+
+                    echo "Monitoring live environment: ${env.ACTIVE_ENV}"
+                }
+            }
+        }
+
+        stage('Health checks') {
+            steps {
+                withCredentials([
+                    file(credentialsId: "${env.LIVE_ENV_CRED_ID}", variable: 'ENV_FILE')
+                ]) {
+                    script {
+                        sh "cp \$ENV_FILE .env.${env.ACTIVE_ENV}"
+
+                        def backendResult = sh(
+                            script: """
+                                docker compose -f ${env.LIVE_COMPOSE_FILE} \
+                                    --env-file .env.${env.ACTIVE_ENV} \
+                                    exec -T ${env.LIVE_BACKEND_SERVICE} \
+                                    curl -sf http://localhost:8000/health
+                            """,
+                            returnStatus: true
+                        )
+
+                        def frontendResult = sh(
+                            script: """
+                                docker compose -f ${env.LIVE_COMPOSE_FILE} \
+                                    --env-file .env.${env.ACTIVE_ENV} \
+                                    exec -T ${env.LIVE_FRONTEND_SERVICE} \
+                                    curl -sf http://localhost:80
+                            """,
+                            returnStatus: true
+                        )
+
+                        env.BACKEND_HEALTHY  = (backendResult == 0)  ? 'true' : 'false'
+                        env.FRONTEND_HEALTHY = (frontendResult == 0) ? 'true' : 'false'
+
+                        echo "Backend:  ${env.BACKEND_HEALTHY  == 'true' ? 'HEALTHY' : 'UNHEALTHY'}"
+                        echo "Frontend: ${env.FRONTEND_HEALTHY == 'true' ? 'HEALTHY' : 'UNHEALTHY'}"
+                    }
+                }
+            }
+        }
+
+        stage('Auto-recovery') {
+            steps {
+                withCredentials([
+                    file(credentialsId: "${env.LIVE_ENV_CRED_ID}", variable: 'ENV_FILE')
+                ]) {
+                    script {
+                        sh "cp \$ENV_FILE .env.${env.ACTIVE_ENV}"
+
+                        def threshold = env.CONSECUTIVE_FAILS.toInteger()
+
+                        def backendFails  = sh(script: "cat ${BACKEND_FAIL_FILE}  || echo 0", returnStdout: true).trim().toInteger()
+                        def frontendFails = sh(script: "cat ${FRONTEND_FAIL_FILE} || echo 0", returnStdout: true).trim().toInteger()
+
+                        if (env.BACKEND_HEALTHY == 'false') {
+                            backendFails++
+                            sh "echo ${backendFails} > ${BACKEND_FAIL_FILE}"
+                            echo "Backend consecutive failures: ${backendFails}/${threshold}"
+
+                            if (backendFails >= threshold) {
+                                echo "Threshold reached — restarting backend..."
+                                sh """
+                                    docker compose -f ${env.LIVE_COMPOSE_FILE} \
+                                        --env-file .env.${env.ACTIVE_ENV} \
+                                        restart ${env.LIVE_BACKEND_SERVICE}
+                                """
+                                sh "echo 0 > ${BACKEND_FAIL_FILE}"
+                                echo "Backend restarted. Fail counter reset."
+                            } else {
+                                echo "Waiting for ${threshold - backendFails} more failure(s) before restarting."
+                            }
+                        } else {
+                            sh "echo 0 > ${BACKEND_FAIL_FILE}"
+                            echo "Backend healthy. Consecutive fail count reset to 0."
+                        }
+
+                        if (env.FRONTEND_HEALTHY == 'false') {
+                            frontendFails++
+                            sh "echo ${frontendFails} > ${FRONTEND_FAIL_FILE}"
+                            echo "Frontend consecutive failures: ${frontendFails}/${threshold}"
+
+                            if (frontendFails >= threshold) {
+                                echo "Threshold reached — restarting frontend..."
+                                sh """
+                                    docker compose -f ${env.LIVE_COMPOSE_FILE} \
+                                        --env-file .env.${env.ACTIVE_ENV} \
+                                        restart ${env.LIVE_FRONTEND_SERVICE}
+                                """
+                                sh "echo 0 > ${FRONTEND_FAIL_FILE}"
+                                echo "Frontend restarted. Fail counter reset."
+                            } else {
+                                echo "Waiting for ${threshold - frontendFails} more failure(s) before restarting."
+                            }
+                        } else {
+                            sh "echo 0 > ${FRONTEND_FAIL_FILE}"
+                            echo "Frontend healthy. Consecutive fail count reset to 0."
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Monitoring cycle complete — all services healthy."
+        }
+        failure {
+            echo "Monitoring cycle encountered an error."
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
