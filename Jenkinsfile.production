@@ -67,29 +67,31 @@ pipeline {
             }
         }
 
-        stage('Smoke tests on idle') {
-            steps {
-                sh """
-                    echo "Waiting for idle environment to be ready..."
-                    for i in \$(seq 1 30); do
-                        docker compose -f ${env.IDLE_COMPOSE_FILE} \
-                            --env-file .env.${env.IDLE_ENV} \
-                            exec -T ${env.IDLE_ENV == 'blue' ? 'backend-blue' : 'backend-green'} \
-                            curl -sf http://localhost:8000/health && echo "READY" && break
-                        echo "Not ready yet... (\$i/30)"
-                        sleep 3
-                    done
-                """
-                dir('backend') {
-                    sh """
-                        python3 -m venv venv-smoke
-                        . venv-smoke/bin/activate
-                        pip install -r requirements-integration.txt
-                        STAGING_URL=http://localhost:${env.IDLE_BACKEND_PORT} pytest tests_integration/ -v
-                    """
-                }
-            }
+    stage('Smoke tests on idle') {
+        steps {
+            sh """
+                echo "Waiting for idle environment to be ready..."
+                for i in \$(seq 1 30); do
+                    docker compose -f ${env.IDLE_COMPOSE_FILE} \
+                        --env-file .env.${env.IDLE_ENV} \
+                        exec -T backend-${env.IDLE_ENV} \
+                        curl -sf http://localhost:8000/health && echo "READY" && break
+                    echo "Not ready yet... (\$i/30)"
+                    sleep 3
+                done
+
+                docker compose -f ${env.IDLE_COMPOSE_FILE} \
+                    --env-file .env.${env.IDLE_ENV} \
+                    exec -T backend-${env.IDLE_ENV} \
+                    pip install -r requirements-integration.txt
+
+                docker compose -f ${env.IDLE_COMPOSE_FILE} \
+                    --env-file .env.${env.IDLE_ENV} \
+                    exec -T -e STAGING_URL=http://localhost:8000 backend-${env.IDLE_ENV} \
+                    pytest tests_integration/ -v
+            """
         }
+    }
 
         stage('Switch traffic') {
             steps {
