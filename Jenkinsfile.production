@@ -69,7 +69,13 @@ pipeline {
                 ]) {
                     sh """
                         cp \$PROD_DB_ENV .env.production-db
-                        docker compose -f ${PROD_DB_COMPOSE} --env-file .env.production-db up -d
+
+                        if docker ps --filter name=car_db_production --filter status=running -q | grep -q .; then
+                            echo "Production database already running — skipping creation"
+                        else
+                            docker compose -f ${PROD_DB_COMPOSE} --env-file .env.production-db up -d
+                        fi
+
                         echo "Waiting for production database..."
                         for i in \$(seq 1 20); do
                             docker exec car_db_production pg_isready -U produser -d proddb && echo "DB READY" && break
