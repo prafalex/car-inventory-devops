@@ -8,7 +8,7 @@ pipeline {
     environment {
         REGISTRY        = "ghcr.io/prafalex/car-inventory-devops"
         BUILD_TAG       = "latest"
-        NGINX_CONF      = "infra/nginx/nginx-prod.conf"
+        NGINX_CONF      = "/home/ec2-user/infra-state/nginx-prod.conf"
         MONITOR_SECONDS = "120"
         POLL_INTERVAL   = "30"
         PROD_DB_COMPOSE = "docker-compose.production-db.yml"
@@ -149,7 +149,7 @@ pipeline {
                         sed -i 's|server localhost:${env.LIVE_FRONTEND_PORT}|server localhost:${env.IDLE_FRONTEND_PORT}|g' ${NGINX_CONF}
                     """
                     echo "Traffic switched to ${env.IDLE_ENV}"
-                    echo "Nginx reloaded — ${env.IDLE_ENV} is now live"
+                    echo "Nginx config updated at ${NGINX_CONF} — ${env.IDLE_ENV} is now live"
                 }
             }
         }
