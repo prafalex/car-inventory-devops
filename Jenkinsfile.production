@@ -25,29 +25,24 @@ pipeline {
         stage('Identify environments') {
             steps {
                 script {
-                    def blueRunning = sh(
-                        script: "docker ps --filter name=car_backend_blue --filter status=running -q",
+                    def nginxConf = sh(
+                        script: "cat ${NGINX_CONF}",
                         returnStdout: true
                     ).trim()
 
-                    def greenRunning = sh(
-                        script: "docker ps --filter name=car_backend_green --filter status=running -q",
-                        returnStdout: true
-                    ).trim()
-
-                    if (blueRunning) {
+                    if (nginxConf.contains('server localhost:8002')) {
                         env.ACTIVE_ENV = 'blue'
                         env.IDLE_ENV   = 'green'
-                    } else if (greenRunning) {
+                    } else if (nginxConf.contains('server localhost:8003')) {
                         env.ACTIVE_ENV = 'green'
                         env.IDLE_ENV   = 'blue'
                     } else {
-                        echo "No environment currently running — first deployment, defaulting to blue as live"
+                        echo "Could not determine live environment from Nginx — defaulting to blue as live, green as idle"
                         env.ACTIVE_ENV = 'blue'
                         env.IDLE_ENV   = 'green'
                     }
 
-                    echo "Currently live: ${env.ACTIVE_ENV} (detected from running containers)"
+                    echo "Currently live: ${env.ACTIVE_ENV} (detected from Nginx config)"
                     echo "Deploying to:   ${env.IDLE_ENV}"
 
                     env.IDLE_BACKEND_PORT  = (env.IDLE_ENV == 'blue') ? '8002' : '8003'
