@@ -11,6 +11,7 @@ pipeline {
         NGINX_CONF      = "infra/nginx/nginx-prod.conf"
         MONITOR_SECONDS = "120"
         POLL_INTERVAL   = "30"
+        PROD_DB_COMPOSE = "docker-compose.production-db.yml"
     }
 
     stages {
@@ -58,6 +59,38 @@ pipeline {
                     env.IDLE_COMPOSE_FILE      = "docker-compose.${env.IDLE_ENV}.yml"
                     env.IDLE_ENV_CRED_ID       = "env-${env.IDLE_ENV}-file"
                 }
+            }
+        }
+
+        stage('Ensure production database is running') {
+            steps {
+                withCredentials([
+                    file(credentialsId: 'env-production-db-file', variable: 'PROD_DB_ENV')
+                ]) {
+                    sh """
+                        cp \$PROD_DB_ENV .env.production-db
+                        docker compose -f ${PROD_DB_COMPOSE} --env-file .env.production-db up -d
+                        echo "Waiting for production database..."
+                        for i in \$(seq 1 20); do
+                            docker exec car_db_production pg_isready -U produser -d proddb && echo "DB READY" && break
+                            echo "Not ready yet... (\$i/20)"
+                            sleep 3
+                        done
+                    """
+                }
+            }
+        }
+
+        stage('Database backup') {
+            steps {
+                sh """
+                    mkdir -p infra/db-backups
+                    TIMESTAMP=\$(date +%Y%m%d_%H%M%S)
+                    BACKUP_FILE="infra/db-backups/pre_deployment_\${TIMESTAMP}.sql"
+                    docker exec car_db_production pg_dump -U produser proddb > \$BACKUP_FILE
+                    echo "Database backup created: \$BACKUP_FILE"
+                    ls -lh \$BACKUP_FILE
+                """
             }
         }
 

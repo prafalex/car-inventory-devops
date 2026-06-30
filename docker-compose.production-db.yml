@@ -1,0 +1,23 @@
+services:
+  db-production:
+    image: postgres:15-alpine
+    container_name: car_db_production
+    env_file:
+      - .env.production-db
+    volumes:
+      - postgres_production_data:/var/lib/postgresql/data
+      - ./infra/db-backups:/backups
+    networks:
+      - car-production-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_production_data:
+
+networks:
+  car-production-network:
+    external: true
