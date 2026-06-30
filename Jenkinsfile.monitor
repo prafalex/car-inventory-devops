@@ -9,7 +9,7 @@ pipeline {
         CONSECUTIVE_FAILS   = "3"
         BACKEND_FAIL_FILE   = "/var/jenkins_home/monitor/backend_fails"
         FRONTEND_FAIL_FILE  = "/var/jenkins_home/monitor/frontend_fails"
-        NGINX_CONF          = "infra/nginx/nginx-prod.conf"
+        NGINX_CONF = "/home/ec2-user/infra-state/nginx-prod.conf"
     }
 
     triggers {
