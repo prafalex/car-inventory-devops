@@ -67,6 +67,10 @@ pipeline {
                     )
                 ]) {
                     sh """
+                        ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
+                            ${STAGING_USER}@${STAGING_HOST} \
+                            'rm -f ${REPO_PATH}/.env.staging'
+
                         cat \$ENV_FILE | ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
                             ${STAGING_USER}@${STAGING_HOST} \
                             'cat > ${REPO_PATH}/.env.staging'
