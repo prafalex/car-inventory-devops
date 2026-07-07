@@ -6,8 +6,15 @@ pipeline {
     }
 
     environment {
-        REGISTRY = "ghcr.io/prafalex/car-inventory-devops"
-        BUILD_TAG = "${env.BUILD_NUMBER}"
+        REGISTRY        = "ghcr.io/prafalex/car-inventory-devops"
+        BUILD_TAG       = "${BUILD_NUMBER}"
+        STAGING_HOST    = "172.31.45.138"
+        STAGING_USER    = "ec2-user"
+        REPO_PATH       = "/home/ec2-user/car-inventory-devops"
+    }
+
+    triggers {
+        pollSCM('* * * * *')
     }
 
     stages {
@@ -47,45 +54,75 @@ pipeline {
 
         stage('Deploy to staging') {
             steps {
-                withCredentials([file(credentialsId: 'env-staging-file', variable: 'ENV_FILE')]) {
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'deploy-key',
+                        keyFileVariable: 'SSH_KEY'
+                    ),
+                    file(credentialsId: 'env-staging-file', variable: 'ENV_FILE'),
+                    usernamePassword(
+                        credentialsId: 'ghcr-credentials',
+                        usernameVariable: 'GHCR_USER',
+                        passwordVariable: 'GHCR_TOKEN'
+                    )
+                ]) {
                     sh """
-                        export BUILD_TAG=${BUILD_TAG}
-                        cp \$ENV_FILE .env.staging
-                        docker compose -f docker-compose.staging.yml --env-file .env.staging down || true
-                        docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
-                        echo "Waiting for backend..."
-                        for i in \$(seq 1 30); do
-                            docker compose -f docker-compose.staging.yml --env-file .env.staging exec -T backend-staging curl -sf http://localhost:8000/health && echo "READY" && exit 0
-                            echo "Not ready yet..."
-                            sleep 2
-                        done
-                        echo "Backend failed to start"
-                        docker compose -f docker-compose.staging.yml --env-file .env.staging logs backend-staging
-                        exit 1
+                        scp -i \$SSH_KEY -o StrictHostKeyChecking=no \
+                            \$ENV_FILE ${STAGING_USER}@${STAGING_HOST}:${REPO_PATH}/.env.staging
+
+                        ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
+                            ${STAGING_USER}@${STAGING_HOST} bash << 'REMOTE'
+                                echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+                                cd ${REPO_PATH}
+                                git pull origin main
+                                export BUILD_TAG=${BUILD_TAG}
+                                docker compose -f docker-compose.staging.yml --env-file .env.staging down || true
+                                docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
+REMOTE
                     """
                 }
             }
         }
 
-
         stage('Integration tests') {
             steps {
-                sh """
-                    docker compose -f docker-compose.staging.yml --env-file .env.staging exec -T backend-staging \
-                        pip install -r requirements-integration.txt
-                    docker compose -f docker-compose.staging.yml --env-file .env.staging exec -T -e STAGING_URL=http://localhost:8000 backend-staging \
-                        pytest tests_integration/ -v
-                """
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'deploy-key',
+                        keyFileVariable: 'SSH_KEY'
+                    )
+                ]) {
+                    sh """
+                        echo "Waiting for staging to be ready..."
+                        for i in \$(seq 1 30); do
+                            ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
+                                ${STAGING_USER}@${STAGING_HOST} \
+                                'docker exec car_backend_staging curl -sf http://localhost:8000/health' \
+                                && echo "READY" && break
+                            echo "Not ready yet... (\$i/30)"
+                            sleep 3
+                        done
+
+                        ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
+                            ${STAGING_USER}@${STAGING_HOST} \
+                            'docker exec car_backend_staging pip install -r requirements-integration.txt'
+
+                        ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
+                            ${STAGING_USER}@${STAGING_HOST} \
+                            'docker exec -e STAGING_URL=http://localhost:8000 car_backend_staging pytest tests_integration/ -v'
+                    """
+                }
             }
         }
+
     }
 
     post {
         success {
-            echo 'Staging deployment succeeded: images built, pushed, deployed, and verified.'
+            echo "Staging deployment complete. Build ${BUILD_TAG} is live on staging."
         }
         failure {
-            echo 'Staging pipeline failed: check the stage logs above.'
+            echo "Staging pipeline failed."
         }
         always {
             cleanWs()

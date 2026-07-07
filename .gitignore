@@ -27,3 +27,4 @@ dist/
 
 .env.blue
 .env.green
+.env.production-db
