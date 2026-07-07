@@ -84,20 +84,19 @@ pipeline {
                             \$PROD_DB_ENV ${PROD_USER}@${PROD_HOST}:${REPO_PATH}/.env.production-db
 
                         ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
-                            ${PROD_USER}@${PROD_HOST} bash << 'REMOTE'
+                            ${PROD_USER}@${PROD_HOST} '
                                 if docker ps --filter name=car_db_production --filter status=running -q | grep -q .; then
                                     echo "Production database already running"
                                 else
                                     cd ${REPO_PATH}
                                     docker compose -f ${PROD_DB_COMPOSE} --env-file .env.production-db up -d
                                 fi
-
                                 for i in \$(seq 1 20); do
                                     docker exec car_db_production pg_isready -U produser -d proddb && echo "DB READY" && break
                                     echo "Not ready yet... (\$i/20)"
                                     sleep 3
                                 done
-REMOTE
+                            '
                     """
                 }
             }
@@ -113,14 +112,14 @@ REMOTE
                 ]) {
                     sh """
                         ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
-                            ${PROD_USER}@${PROD_HOST} bash << 'REMOTE'
+                            ${PROD_USER}@${PROD_HOST} '
                                 mkdir -p /home/ec2-user/db-backups
                                 TIMESTAMP=\$(date +%Y%m%d_%H%M%S)
                                 BACKUP_FILE="/home/ec2-user/db-backups/pre_deployment_\${TIMESTAMP}.sql"
                                 docker exec car_db_production pg_dump -U produser proddb > \$BACKUP_FILE
                                 echo "Database backup created: \$BACKUP_FILE"
                                 ls -lh \$BACKUP_FILE
-REMOTE
+                            '
                     """
                 }
             }
@@ -145,13 +144,12 @@ REMOTE
                             \$ENV_FILE ${PROD_USER}@${PROD_HOST}:${REPO_PATH}/.env.${env.IDLE_ENV}
 
                         ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
-                            ${PROD_USER}@${PROD_HOST} bash << 'REMOTE'
-                                echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
-                                cd ${REPO_PATH}
-                                git pull origin main
-                                docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} down || true
-                                docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} up -d
-REMOTE
+                            ${PROD_USER}@${PROD_HOST} \
+                            "cd ${REPO_PATH} && \
+                             git pull origin main && \
+                             echo \$GHCR_TOKEN | docker login ghcr.io -u \$GHCR_USER --password-stdin && \
+                             BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} down || true && \
+                             BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} up -d"
                     """
                 }
             }
@@ -219,7 +217,6 @@ REMOTE
                         def healthy = true
                         def polls = (env.MONITOR_SECONDS.toInteger() / env.POLL_INTERVAL.toInteger()).toInteger()
                         def idleEnv = env.IDLE_ENV
-                        def sshKey = "\$SSH_KEY"
 
                         for (int i = 1; i <= polls; i++) {
                             sleep(env.POLL_INTERVAL.toInteger())
