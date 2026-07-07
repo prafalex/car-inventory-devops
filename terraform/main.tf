@@ -55,12 +55,12 @@ resource "aws_security_group" "car_inventory_sg" {
   }
 
   # allow SSH between VMs within the same VPC
-    ingress {
-        from_port   = 22
-        to_port     = 22
-        protocol    = "tcp"
-        cidr_blocks = ["172.31.0.0/16"]
-    }
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["172.31.0.0/16"]
+  }
 
   egress {
     from_port   = 0
@@ -156,7 +156,7 @@ resource "aws_instance" "jenkins" {
 }
 
 # staging is a clean VM that receives deployments from Jenkins
-# Jenkins SSHes in (or uses docker exec remotely) to run docker compose up
+# Jenkins SSHes in to run docker compose up — it never builds images here
 resource "aws_instance" "staging" {
   ami                    = var.ami_id
   instance_type          = var.staging_instance_type
@@ -192,7 +192,8 @@ resource "aws_instance" "staging" {
 
     cd /home/ec2-user
     git clone ${var.github_repo} car-inventory-devops
-    chown -R ec2-user:ec2-user car-inventory-devops
+    chown -R ec2-user:ec2-user /home/ec2-user/car-inventory-devops
+    chmod -R 755 /home/ec2-user/car-inventory-devops
 
     echo "done" > /home/ec2-user/.setup-complete
   EOF
@@ -249,7 +250,8 @@ resource "aws_instance" "production" {
 
     cd /home/ec2-user
     git clone ${var.github_repo} car-inventory-devops
-    chown -R ec2-user:ec2-user car-inventory-devops
+    chown -R ec2-user:ec2-user /home/ec2-user/car-inventory-devops
+    chmod -R 755 /home/ec2-user/car-inventory-devops
 
     # seed the persistent nginx config from the repo
     # after this point Jenkins owns it — never touched by git again

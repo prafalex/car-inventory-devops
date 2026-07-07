@@ -80,8 +80,13 @@ pipeline {
                     file(credentialsId: 'env-production-db-file', variable: 'PROD_DB_ENV')
                 ]) {
                     sh """
-                        scp -i \$SSH_KEY -o StrictHostKeyChecking=no \
-                            \$PROD_DB_ENV ${PROD_USER}@${PROD_HOST}:${REPO_PATH}/.env.production-db
+                        ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
+                            ${PROD_USER}@${PROD_HOST} \
+                            'rm -f ${REPO_PATH}/.env.production-db'
+
+                        cat \$PROD_DB_ENV | ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
+                            ${PROD_USER}@${PROD_HOST} \
+                            'cat > ${REPO_PATH}/.env.production-db'
 
                         ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
                             ${PROD_USER}@${PROD_HOST} '
@@ -140,8 +145,13 @@ pipeline {
                     )
                 ]) {
                     sh """
-                        scp -i \$SSH_KEY -o StrictHostKeyChecking=no \
-                            \$ENV_FILE ${PROD_USER}@${PROD_HOST}:${REPO_PATH}/.env.${env.IDLE_ENV}
+                        ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
+                            ${PROD_USER}@${PROD_HOST} \
+                            'rm -f ${REPO_PATH}/.env.${env.IDLE_ENV}'
+
+                        cat \$ENV_FILE | ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
+                            ${PROD_USER}@${PROD_HOST} \
+                            'cat > ${REPO_PATH}/.env.${env.IDLE_ENV}'
 
                         ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
                             ${PROD_USER}@${PROD_HOST} \
