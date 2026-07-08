@@ -15,6 +15,7 @@ pipeline {
         PROD_DB_COMPOSE  = "docker-compose.production-db.yml"
         MONITOR_SECONDS  = "120"
         POLL_INTERVAL    = "30"
+        DEPLOY_BRANCH    = "release"
     }
 
     stages {
@@ -156,7 +157,9 @@ pipeline {
                         ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
                             ${PROD_USER}@${PROD_HOST} \
                             "cd ${REPO_PATH} && \
-                             git pull origin main && \
+                             git fetch origin && \
+                             git checkout ${DEPLOY_BRANCH} && \
+                             git pull origin ${DEPLOY_BRANCH} && \
                              echo \$GHCR_TOKEN | docker login ghcr.io -u \$GHCR_USER --password-stdin && \
                              BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} down || true && \
                              BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} up -d"
