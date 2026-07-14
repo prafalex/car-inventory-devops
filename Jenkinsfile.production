@@ -196,7 +196,7 @@ pipeline {
                              git pull origin ${DEPLOY_BRANCH} && \
                              echo \$GHCR_TOKEN | docker login ghcr.io -u \$GHCR_USER --password-stdin && \
                              BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} down || true && \
-                             BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} up -d"
+                             BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} up -d --build"
                     """
                 }
             }
