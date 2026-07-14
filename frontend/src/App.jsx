@@ -43,7 +43,7 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🚗 Car--Inventory🚗</h1>
+        <h1>🚗 Car-Inventory🚗</h1>
         <p className="subtitle">Manage your vehicle catalog</p>
       </header>
 
