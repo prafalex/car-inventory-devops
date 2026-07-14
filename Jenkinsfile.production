@@ -19,6 +19,10 @@ pipeline {
         LAST_COMMIT_FILE = "/var/jenkins_home/last_deployed_commit"
     }
 
+    triggers {
+        pollSCM('* * * * *')
+    }
+
     stages {
 
         stage('Checkout') {
