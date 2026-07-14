@@ -16,6 +16,7 @@ pipeline {
         MONITOR_SECONDS  = "120"
         POLL_INTERVAL    = "30"
         DEPLOY_BRANCH    = "release"
+        LAST_COMMIT_FILE = "/var/jenkins_home/last_deployed_commit"
     }
 
     stages {
@@ -26,7 +27,35 @@ pipeline {
             }
         }
 
+        stage('Check for new release') {
+            steps {
+                script {
+                    env.CURRENT_COMMIT = sh(
+                        script: "git rev-parse HEAD",
+                        returnStdout: true
+                    ).trim()
+
+                    def lastDeployed = sh(
+                        script: "cat ${LAST_COMMIT_FILE} 2>/dev/null || echo 'none'",
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Current release commit: ${env.CURRENT_COMMIT}"
+                    echo "Last deployed commit:   ${lastDeployed}"
+
+                    if (env.CURRENT_COMMIT == lastDeployed) {
+                        echo "No new changes on release branch — skipping deployment."
+                        env.SKIP_DEPLOY = "true"
+                    } else {
+                        echo "New release commit detected — proceeding with deployment."
+                        env.SKIP_DEPLOY = "false"
+                    }
+                }
+            }
+        }
+
         stage('Identify environments') {
+            when { expression { env.SKIP_DEPLOY == "false" } }
             steps {
                 withCredentials([
                     sshUserPrivateKey(
@@ -72,6 +101,7 @@ pipeline {
         }
 
         stage('Ensure production database is running') {
+            when { expression { env.SKIP_DEPLOY == "false" } }
             steps {
                 withCredentials([
                     sshUserPrivateKey(
@@ -109,6 +139,7 @@ pipeline {
         }
 
         stage('Database backup') {
+            when { expression { env.SKIP_DEPLOY == "false" } }
             steps {
                 withCredentials([
                     sshUserPrivateKey(
@@ -132,6 +163,7 @@ pipeline {
         }
 
         stage('Deploy to idle') {
+            when { expression { env.SKIP_DEPLOY == "false" } }
             steps {
                 withCredentials([
                     sshUserPrivateKey(
@@ -157,18 +189,20 @@ pipeline {
                         ssh -i \$SSH_KEY -o StrictHostKeyChecking=no \
                             ${PROD_USER}@${PROD_HOST} \
                             "cd ${REPO_PATH} && \
-                            git fetch origin && \
-                            git reset --hard origin/${DEPLOY_BRANCH} && \
-                            git checkout ${DEPLOY_BRANCH} && \
-                            git pull origin ${DEPLOY_BRANCH} && \
-                            echo \$GHCR_TOKEN | docker login ghcr.io -u \$GHCR_USER --password-stdin && \
-                            BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} down || true && \
-                            BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} up -d"                    """
+                             git fetch origin && \
+                             git reset --hard origin/${DEPLOY_BRANCH} && \
+                             git checkout ${DEPLOY_BRANCH} && \
+                             git pull origin ${DEPLOY_BRANCH} && \
+                             echo \$GHCR_TOKEN | docker login ghcr.io -u \$GHCR_USER --password-stdin && \
+                             BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} down || true && \
+                             BUILD_TAG=${BUILD_TAG} docker compose -f ${env.IDLE_COMPOSE_FILE} --env-file .env.${env.IDLE_ENV} up -d"
+                    """
                 }
             }
         }
 
         stage('Smoke tests on idle') {
+            when { expression { env.SKIP_DEPLOY == "false" } }
             steps {
                 withCredentials([
                     sshUserPrivateKey(
@@ -200,6 +234,7 @@ pipeline {
         }
 
         stage('Switch traffic') {
+            when { expression { env.SKIP_DEPLOY == "false" } }
             steps {
                 withCredentials([
                     sshUserPrivateKey(
@@ -219,6 +254,7 @@ pipeline {
         }
 
         stage('Monitor post-swap') {
+            when { expression { env.SKIP_DEPLOY == "false" } }
             steps {
                 withCredentials([
                     sshUserPrivateKey(
@@ -265,11 +301,25 @@ pipeline {
             }
         }
 
+        stage('Record deployed commit') {
+            when { expression { env.SKIP_DEPLOY == "false" } }
+            steps {
+                sh "echo ${env.CURRENT_COMMIT} > ${LAST_COMMIT_FILE}"
+                echo "Recorded deployed commit: ${env.CURRENT_COMMIT}"
+            }
+        }
+
     }
 
     post {
         success {
-            echo "Blue/Green deployment complete. New live environment: ${env.IDLE_ENV}"
+            script {
+                if (env.SKIP_DEPLOY == "true") {
+                    echo "Pipeline completed — no new release to deploy."
+                } else {
+                    echo "Blue/Green deployment complete. New live environment: ${env.IDLE_ENV}"
+                }
+            }
         }
         failure {
             echo "Pipeline failed. Live environment unchanged: ${env.ACTIVE_ENV}"
